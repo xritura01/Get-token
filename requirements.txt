@@ -1,0 +1,5 @@
+pywebview
+asyncio
+curl_cffi
+crypto
+pywin32
