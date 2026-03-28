@@ -27,7 +27,7 @@ The tool targets all official Discord client distributions:
 
 * **OS:** Windows 10 / Windows 11
 * **Language:** [Python 3.13](https://apps.microsoft.com/detail/9PNRBTZXMB4Z?hl=en-us&gl=GB&ocid=pdpshare)
-* **UI Engine:** * Primary: **WebView2** (Recommended for best experience)
+* **UI Engine:** * Primary: **[WebView2](https://developer.microsoft.com/en-gb/microsoft-edge/webview2/consumer)** (Recommended for best experience)
     * Fallback: **QT** (Automatic fallback if WebView2 is not detected)
 
 ---
