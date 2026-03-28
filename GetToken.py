@@ -85,6 +85,9 @@ def check_for_updates():
         print(f"Update check failed: {e}")
     return None
 def run_update(download_url):
+    if not getattr(sys, 'frozen',False):
+        print("!!! Update blocked: Running from raw source code, not an EXE !!!")
+        return
     current_exe = os.path.realpath(sys.executable)
     exe_directory = os.path.dirname(current_exe)
     exe_name = os.path.basename(current_exe)
