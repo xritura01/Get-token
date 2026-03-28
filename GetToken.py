@@ -320,7 +320,11 @@ def GetToken():
             run_update(update)
     global token, window
     token = None
-    gui = "edgechromium" if DetectEdge() else print("Unable to find Microsoft Edge Runtime, using QT") ;gui= "qt"
+    if DetectEdge():
+        gui = "edgechromium"
+    else:
+        print("Unable to find Microsoft Edge Runtime, using QT")
+        gui = "qt"
     def on_closed():
         if token is None:
             pass
