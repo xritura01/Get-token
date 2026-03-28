@@ -1,7 +1,8 @@
-import webview, threading,os,re,base64,json,asyncio,win32crypt
+import webview,threading,os,re,base64,json,asyncio,win32crypt,requests,subprocess,sys
 from curl_cffi import requests as req
 from Crypto.Cipher import AES
 token = None
+captured_token = None
 SUPER_PROPS = base64.b64encode(json.dumps({
     "os": "Windows",
     "browser": "Discord Client",
@@ -67,16 +68,68 @@ INJECT_UI = r"""
   XMLHttpRequest.prototype.setRequestHeader = function(h, v) { if (h.toLowerCase() === 'authorization') window.pywebview.api.on_found({ auth: v }); return oSet.apply(this, [h, v]); };
 })();
 """
+VERSION = "v1.0.0"
+def DetectEdge():
+    return os.path.exists(r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application")
+def check_for_updates():
+    repo = "xritura01/Get-token"
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    try:
+        response = requests.get(url, timeout=5).json()
+        latest_version = response.get('tag_name')
+        if latest_version and latest_version != VERSION:
+            if 'assets' in response and len(response['assets']) > 0:
+                download_url = response['assets'][0]['browser_download_url']
+                return download_url
+    except Exception as e:
+        print(f"Update check failed: {e}")
+    return None
+def run_update(download_url):
+    current_exe = os.path.realpath(sys.executable)
+    exe_directory = os.path.dirname(current_exe)
+    exe_name = os.path.basename(current_exe)
+    temp_exe_path = os.path.join(exe_directory, "update_temp.exe")
+    bat_path = os.path.join(exe_directory, "updater.bat")
+    print(f"Downloading update to {temp_exe_path}...")
+    try:
+        r = requests.get(download_url, stream=True)
+        r.raise_for_status()
+        with open(temp_exe_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+        bat_content = f"""@echo off
+timeout /t 2 /nobreak > nul
+:loop
+del /f "{current_exe}"
+if exist "{current_exe}" (
+    timeout /t 1 /nobreak > nul
+    goto loop
+)
+ren "{temp_exe_path}" "{exe_name}"
+start "" "{current_exe}"
+del "%~f0"
+"""
+        with open(bat_path, "w") as f:
+            f.write(bat_content)
+        print("Update ready. Restarting...")
+        subprocess.Popen([bat_path], shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        sys.exit(0)
+    except Exception as e:
+        print(f"Update failed: {e}")
+        if os.path.exists(temp_exe_path):
+            os.remove(temp_exe_path)
 def find_browser_tokens():
     paths = {
         "Chrome": os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\Default\Local Storage\leveldb"),
         "Edge": os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Local Storage\leveldb"),
         "Brave": os.path.expandvars(r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data\Default\Local Storage\leveldb"),
     }
+    Browser=False
     found = []
     for b, path in paths.items():
         if not os.path.exists(path):
             continue
+        Browser = True
         for file in os.listdir(path):
             if not file.endswith((".ldb", ".log")):
                 continue
@@ -88,6 +141,9 @@ def find_browser_tokens():
                         found.append(t)
             except:
                 continue
+    if not Browser:
+        window.evaluate_js("document.getElementById('status').textContent = '✗ Compatiable browser is not installed'; document.getElementById('status').style.color = '#ed4245';")
+        return None
     return found
 
 def GetMasterKey(app):
@@ -144,6 +200,7 @@ def find_dc_tokens():
                 continue
     if not client:
         window.evaluate_js("document.getElementById('status').textContent = '✗ Discord Client is not Installed'; document.getElementById('status').style.color = '#ed4245';")
+        return None
     return found
 
 async def _validate_token(t):
@@ -198,36 +255,41 @@ class API:
       threading.Timer(0.8, window.destroy).start()
     def extract_from_browser(self):
         global token
+        tokens=find_browser_tokens()
+        if tokens is None:
+            return
         validated_tokens = []
         for t in find_browser_tokens():
             result = validate_token(t)
             if result:
                 validated_tokens.append(t)
-        if not validated_tokens:
+        if len(validated_tokens) == 0:
             window.evaluate_js("document.getElementById('status').textContent = '✗ No valid tokens found in browsers'; document.getElementById('status').style.color = '#ed4245';")
-        if len(validated_tokens) > 1:
+        elif len(validated_tokens) > 1:
             for i, t in enumerate(validated_tokens):
                 print(f"  [{i+1}] {t}")
             window.evaluate_js(Dropdown(validated_tokens, "select_token"))
         else:
             token = validated_tokens[0]
             threading.Timer(0.8, window.destroy).start()
-        window.evaluate_js("document.getElementById('status').textContent = '✓ Found valid token!'; document.getElementById('status').style.color = '#57f287';")
+            window.evaluate_js("document.getElementById('status').textContent = '✓ Found valid token!'; document.getElementById('status').style.color = '#57f287';")
     def extract_from_desktop(self):
         global token
+        tokens=find_dc_tokens()
+        if tokens is None:
+            return
         validated_tokens = []
         for t in find_dc_tokens():
             result = validate_token(t)
             if result:
                 validated_tokens.append(t)
-        if not validated_tokens:
+        if len(validated_tokens) == 0:
             window.evaluate_js("document.getElementById('status').textContent = '✗ No valid tokens found in desktop apps'; document.getElementById('status').style.color = '#ed4245';")
-        if len(validated_tokens) > 1:
+        elif len(validated_tokens) > 1:
             for i, t in enumerate(validated_tokens):
                 print(f"  [{i+1}] {t}")
             window.evaluate_js(Dropdown(validated_tokens, "select_token"))
         else:
-            token = validated_tokens[0]
             window.evaluate_js("document.getElementById('status').textContent = '✓ Found valid token!'; document.getElementById('status').style.color = '#57f287';")
             threading.Timer(0.8, window.destroy).start()
     def on_manual(self, t):
@@ -247,14 +309,25 @@ def RunJS(w):
     w.evaluate_js(INJECT_UI)
 
 def GetToken():
+    update = check_for_updates()
+    if update:
+        print("A New Version is Available")
+        choice = input("Would you like to update now? (y/n): ").strip().lower()
+        if choice == "y":
+            run_update(update)
     global token, window
     token = None
+    gui = "edgechromium" if DetectEdge() else print("Unable to find Microsoft Edge Runtime, using QT") ;gui= "qt"
     def on_closed():
         if token is None:
             pass
-    window = webview.create_window("Login with Discord","https://discord.com/login",js_api=API(),width=1000,height=700,text_select=False,)
+    window = webview.create_window("Login with Discord","https://discord.com/login",js_api=API(),width=1000,height=700,text_select=False)
     window.events.closed += on_closed
-    webview.start(RunJS, window, debug=False)
+    webview.start(RunJS, window, debug=False,gui=gui)
     if token is None:
         token = input("  Window closed — paste token manually: ").strip()
+    r = validate_token(token)
+    if not r:
+        print("Unable to validate token.")
+        return None
     return token
