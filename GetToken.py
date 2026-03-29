@@ -1,3 +1,4 @@
+# python -m PyInstaller --onefile --name="Get-Token" --clean main.py
 import webview,threading,os,re,base64,json,asyncio,win32crypt,requests,subprocess,sys,sqlite3,shutil,tempfile
 from curl_cffi import requests as req
 from Crypto.Cipher import AES
@@ -68,7 +69,7 @@ INJECT_UI = r"""
   XMLHttpRequest.prototype.setRequestHeader = function(h, v) { if (h.toLowerCase() === 'authorization') window.pywebview.api.on_found({ auth: v }); return oSet.apply(this, [h, v]); };
 })();
 """
-VERSION = "v1.0.0"
+VERSION = "v1.1.0"
 def DetectEdge():
     return os.path.exists(r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application")
 def check_for_updates():
@@ -77,13 +78,24 @@ def check_for_updates():
     try:
         response = requests.get(url, timeout=5).json()
         latest_version = response.get('tag_name')
-        if latest_version and latest_version != VERSION:
-            if 'assets' in response and len(response['assets']) > 0:
-                download_url = response['assets'][0]['browser_download_url']
-                return download_url
+        if latest_version:
+            def parse(v):
+                return [int(x) for x in v.lower().replace('v', '').split('.')]
+            try:
+                remote_v = parse(latest_version)
+                local_v = parse(VERSION)
+                if remote_v > local_v:
+                    changelog = response.get('body', 'No changelog provided.')
+                    if 'assets' in response and len(response['assets']) > 0:
+                        download_url = response['assets'][0]['browser_download_url']
+                        return download_url,changelog,latest_version
+                else:
+                    print(f"No update needed! (Local: {VERSION} | Remote: {latest_version})")
+            except Exception as e:
+                print(f"Version parsing failed: {e}")
     except Exception as e:
         print(f"Update check failed: {e}")
-    return None
+    return None,None,None
 def run_update(download_url):
     if not getattr(sys, 'frozen',False):
         print("!!! Update blocked: Running from raw source code, not an EXE !!!")
@@ -355,12 +367,25 @@ def RunJS(w):
     w.evaluate_js(INJECT_UI)
 
 def GetToken():
-    update = check_for_updates()
-    if update:
-        print("A New Version is Available")
-        choice = input("Would you like to update now? (y/n): ").strip().lower()
-        if choice == "y":
-            run_update(update)
+    update,notes,latest_version = check_for_updates()
+    if update and notes:
+        try:
+            whats_new = notes.split("## ✨ What's New")[1].split("##")[0]
+        except (IndexError, AttributeError):
+            whats_new = notes.strip()
+        print("\n" + "="*50)
+        print(f"🚀 NEW VERSION AVAILABLE: {latest_version}")
+        print("="*50)
+        print(f"\nPATCH NOTES:\n{whats_new}")
+        print("-" * 50)
+        choice = input("\nWould you like to update now? (y/n): ").strip().lower()
+        if choice == 'y':
+            if getattr(sys, 'frozen', False):
+                run_update(update)
+                return
+            else:
+                print("!!! Skipping update: Running from source code. !!!")
+                print("Continuing to app...\n")
     global token, window
     token = None
     if DetectEdge():
