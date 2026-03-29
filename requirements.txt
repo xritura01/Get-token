@@ -1,5 +1,7 @@
-pywebview
+pywebview[qt]
 asyncio
 curl_cffi
 crypto
 pywin32
+pycryptodome
+pystyle
