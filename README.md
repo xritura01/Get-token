@@ -62,7 +62,7 @@ The tool targets all official Discord client distributions:
 3. Run `build.bat` and wait for the process to complete.
 4. Run `run.bat` to launch the utility.
 
-## ℹ️ Color Codes
+## 🎨 Color Codes
 - Success messages: **GREEN** ✓
 - Errors: **RED** ✗  
 - Warnings/Debug: **YELLOW** ⚠️
