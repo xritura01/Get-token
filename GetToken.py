@@ -2,6 +2,19 @@
 import webview,threading,os,re,base64,json,asyncio,win32crypt,requests,subprocess,sys,sqlite3,shutil,tempfile
 from curl_cffi import requests as req
 from Crypto.Cipher import AES
+from colorama import init as colorama_init, Fore, Style
+colorama_init(autoreset=True)
+def style_text(text, color='white'):
+    color_key = color.upper() if isinstance(color, str) else 'WHITE'
+    return f"{getattr(Fore, color_key, Fore.WHITE)}{text}{Style.RESET_ALL}"
+def cprint(text, color='white'):
+    print(style_text(text, color))
+
+def accent_to_color(accent_color):
+    if not accent_color or not isinstance(accent_color, int):
+        return 'blue'
+    palette = ['BLUE', 'CYAN', 'MAGENTA', 'GREEN', 'YELLOW', 'RED', 'WHITE']
+    return palette[accent_color % len(palette)].lower()
 token = None
 captured_token = None
 SUPER_PROPS = base64.b64encode(json.dumps({
@@ -90,22 +103,22 @@ def check_for_updates():
                         download_url = response['assets'][0]['browser_download_url']
                         return download_url,changelog,latest_version
                 else:
-                    print(f"No update needed! (Local: {VERSION} | Remote: {latest_version})")
+                    cprint(f"No update needed! (Local: {VERSION} | Remote: {latest_version})", 'green')
             except Exception as e:
-                print(f"Version parsing failed: {e}")
+                cprint(f"Version parsing failed: {e}", 'yellow')
     except Exception as e:
-        print(f"Update check failed: {e}")
+        cprint(f"Update check failed: {e}", 'red')
     return None,None,None
 def run_update(download_url):
     if not getattr(sys, 'frozen',False):
-        print("!!! Update blocked: Running from raw source code, not an EXE !!!")
+        cprint("!!! Update blocked: Running from raw source code, not an EXE !!!", 'yellow')
         return
     current_exe = os.path.realpath(sys.executable)
     exe_directory = os.path.dirname(current_exe)
     exe_name = os.path.basename(current_exe)
     temp_exe_path = os.path.join(exe_directory, "update_temp.exe")
     bat_path = os.path.join(exe_directory, "updater.bat")
-    print(f"Downloading update to {temp_exe_path}...")
+    cprint(f"Downloading update to {temp_exe_path}...", 'cyan')
     try:
         r = requests.get(download_url, stream=True)
         r.raise_for_status()
@@ -126,28 +139,38 @@ del "%~f0"
 """
         with open(bat_path, "w") as f:
             f.write(bat_content)
-        print("Update ready. Restarting...")
+        cprint("Update ready. Restarting...", 'green')
         subprocess.Popen([bat_path], shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE)
         sys.exit(0)
     except Exception as e:
-        print(f"Update failed: {e}")
+        cprint(f"Update failed: {e}", 'red')
         if os.path.exists(temp_exe_path):
             os.remove(temp_exe_path)
 def find_browser_tokens():
     chromium_paths = {
         "Chromium": os.path.expandvars(r"%LOCALAPPDATA%\Chromium\User Data"),
         "Chrome": os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data"),
+        "Chrome Canary": os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome SxS\User Data"),
         "Edge": os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data"),
+        "Edge Beta": os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge Beta\User Data"),
+        "Edge Dev": os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge Dev\User Data"),
         "Brave": os.path.expandvars(r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data"),
         "Opera": os.path.expandvars(r"%APPDATA%\Opera Software\Opera Stable"),
         "Vivaldi": os.path.expandvars(r"%LOCALAPPDATA%\Vivaldi\User Data"),
+        "Ulaa": os.path.expandvars(r"%LOCALAPPDATA%\Zoho\Ulaa\User Data"),
+        "Opera GX": os.path.expandvars(r"%APPDATA%\Opera Software\Opera GX Stable"),
     }
     gecko_paths = {
         "Firefox": os.path.expandvars(r"%APPDATA%\Mozilla\Firefox\Profiles"),
         "Firefox MSIX": os.path.expandvars(r"%LOCALAPPDATA%\Packages\Mozilla.Firefox_n80bbvh6b1yt2\LocalCache\Roaming\Mozilla\Firefox\Profiles"),
     }
-    Browser=False
+    Browser = False
     found = []
+
+    def _add_token(token, source):
+        if token and not any(token == existing_token for existing_token, _ in found):
+            found.append((token, source))
+
     for b, path in chromium_paths.items():
         if not os.path.exists(path):
             continue
@@ -163,12 +186,13 @@ def find_browser_tokens():
                     try:
                         with open(os.path.join(leveldb_path, file), "rb") as f:
                             content = f.read().decode("utf-8", errors="ignore")
-                            for t in re.findall(r"[\w-]{24}\.[\w-]{6}\.[\w-]{27,}", content):
-                                if t not in found:
-                                    found.append(t)
-                    except:
+                            for t in re.findall(r"(?:mfa\.[\w-]{84}|[\w-]{24,48}\.[\w-]{6,}\.[\w-]{27,})", content):
+                                _add_token(t, b)
+                    except Exception as e:
+                        cprint(f"[debug] error reading file {file}: {e}", 'yellow')
                         continue
-    for b,profile_root in gecko_paths.items():
+
+    for b, profile_root in gecko_paths.items():
         if not os.path.exists(profile_root):
             continue
         Browser = True
@@ -178,7 +202,6 @@ def find_browser_tokens():
                     continue
                 if file == "data.sqlite" and "https+++discord.com" in root:
                     db_path = os.path.join(root, file)
-                    tmp = os.path.join(tempfile.gettempdir(), f"temp_{os.urandom(4).hex()}.sqlite")
                     try:
                         tmp = tempfile.mktemp(suffix=".sqlite")
                         shutil.copy2(db_path, tmp)
@@ -193,12 +216,12 @@ def find_browser_tokens():
                             else:
                                 token = str(token_raw)
                             token = token.strip('"')
-                            if token and token not in found:
-                                found.append(token)
+                            _add_token(token, b)
                         conn.close()
                     except Exception as e:
-                        print(f"Error reading Firefox data: {e}")
+                        cprint(f"Error reading Firefox data: {e}", 'yellow')
                         continue
+
     if not Browser:
         window.evaluate_js("document.getElementById('status').textContent = '✗ Compatiable browser is not installed'; document.getElementById('status').style.color = '#ed4245';")
         return None
@@ -227,13 +250,18 @@ def DecryptToken(TokenEnc,MasterKey):
         return None
 
 def find_dc_tokens():
-    apps= {
-        "Discord":"Discord",
-        "Discord Canary":"discordcanary",
-        "Discord PTB":  "discordptb",
+    apps = {
+        "Discord": "Discord",
+        "Discord Canary": "discordcanary",
+        "Discord PTB": "discordptb",
     }
     found = []
     client = False
+
+    def _add_token(token, source):
+        if token and not any(token == existing_token for existing_token, _ in found):
+            found.append((token, source))
+
     for app, folder in apps.items():
         path = os.path.expandvars(f"%APPDATA%\\{app}\\Local Storage\\leveldb")
         if not os.path.exists(path):
@@ -241,20 +269,18 @@ def find_dc_tokens():
         client = True
         MasterKey = GetMasterKey(folder)
         for file in os.listdir(path):
-          if not file.endswith((".ldb", ".log")):
-              continue
-          try:
-              with open(os.path.join(path, file), "rb") as f:
-                  content = f.read().decode("utf-8", errors="ignore")
-              if MasterKey:
-                  for m in re.findall(r"dQw4w9WgXcQ:[^\"\\]{20,}", content):
-                      token = DecryptToken(m, MasterKey)
-                      if token and token not in found:
-                          found.append(token)
-              for t in re.findall(r"[\w-]{24}\.[\w-]{6}\.[\w-]{27,}", content):
-                  if t not in found:
-                      found.append(t)
-          except:
+            if not file.endswith((".ldb", ".log")):
+                continue
+            try:
+                with open(os.path.join(path, file), "rb") as f:
+                    content = f.read().decode("utf-8", errors="ignore")
+                if MasterKey:
+                    for m in re.findall(r"dQw4w9WgXcQ:[^\"\\]{20,}", content):
+                        token = DecryptToken(m, MasterKey)
+                        _add_token(token, app)
+                for t in re.findall(r"(?:mfa\.[\w-]{84}|[\w-]{24,48}\.[\w-]{6,}\.[\w-]{27,})", content):
+                    _add_token(t, app)
+            except:
                 continue
     if not client:
         window.evaluate_js("document.getElementById('status').textContent = '✗ Discord Client is not Installed'; document.getElementById('status').style.color = '#ed4245';")
@@ -268,6 +294,8 @@ async def _validate_token(t):
     await session.close()
     if r.status_code == 200:
         return r.json()
+    else:
+        cprint(f"[debug] token validation failed with status {r.status_code}: {r.text}", 'yellow')
     return None
 
 def validate_token(t):
@@ -313,41 +341,54 @@ class API:
       threading.Timer(0.8, window.destroy).start()
     def extract_from_browser(self):
         global token
-        tokens=find_browser_tokens()
+        tokens = find_browser_tokens()
         if tokens is None:
             return
         validated_tokens = []
-        for t in find_browser_tokens():
+        for t, source in tokens:
             result = validate_token(t)
             if result:
-                validated_tokens.append(t)
+                username = f"{result.get('username','unknown')}#{result.get('discriminator','0000')}"
+                accent_color = result.get('accent_color')
+                token_color = accent_to_color(accent_color)
+                label = f"{username} ({source})"
+                validated_tokens.append((t, label, token_color))
+            else:
+                cprint(f"[debug] invalid token: {t} from {source}", 'red')
         if len(validated_tokens) == 0:
             window.evaluate_js("document.getElementById('status').textContent = '✗ No valid tokens found in browsers'; document.getElementById('status').style.color = '#ed4245';")
         elif len(validated_tokens) > 1:
-            for i, t in enumerate(validated_tokens):
-                print(f"  [{i+1}] {t}")
-            window.evaluate_js(Dropdown(validated_tokens, "select_token"))
+            for i, (t, label, token_color) in enumerate(validated_tokens):
+                cprint(f"  [{i+1}] {label} ({t})", token_color)
+            window.evaluate_js(Dropdown([(t, label) for (t, label, _) in validated_tokens], "select_token"))
         else:
-            token = validated_tokens[0]
+            token = validated_tokens[0][0]
             threading.Timer(0.8, window.destroy).start()
             window.evaluate_js("document.getElementById('status').textContent = '✓ Found valid token!'; document.getElementById('status').style.color = '#57f287';")
     def extract_from_desktop(self):
         global token
-        tokens=find_dc_tokens()
+        tokens = find_dc_tokens()
         if tokens is None:
             return
         validated_tokens = []
-        for t in find_dc_tokens():
+        for t, source in tokens:
             result = validate_token(t)
             if result:
-                validated_tokens.append(t)
+                username = f"{result.get('username','unknown')}#{result.get('discriminator','0000')}"
+                accent_color = result.get('accent_color')
+                token_color = accent_to_color(accent_color)
+                label = f"{username} ({source})"
+                validated_tokens.append((t, label, token_color))
+            else:
+                cprint(f"[debug] invalid token: {t} from {source}", 'red')
         if len(validated_tokens) == 0:
             window.evaluate_js("document.getElementById('status').textContent = '✗ No valid tokens found in desktop apps'; document.getElementById('status').style.color = '#ed4245';")
         elif len(validated_tokens) > 1:
-            for i, t in enumerate(validated_tokens):
-                print(f"  [{i+1}] {t}")
-            window.evaluate_js(Dropdown(validated_tokens, "select_token"))
+            for i, (t, label, token_color) in enumerate(validated_tokens):
+                cprint(f"  [{i+1}] {label} ({t})", token_color)
+            window.evaluate_js(Dropdown([(t, label) for (t, label, _) in validated_tokens], "select_token"))
         else:
+            token = validated_tokens[0][0]
             window.evaluate_js("document.getElementById('status').textContent = '✓ Found valid token!'; document.getElementById('status').style.color = '#57f287';")
             threading.Timer(0.8, window.destroy).start()
     def on_manual(self, t):
@@ -373,25 +414,25 @@ def GetToken():
             whats_new = notes.split("## ✨ What's New")[1].split("##")[0]
         except (IndexError, AttributeError):
             whats_new = notes.strip()
-        print("\n" + "="*50)
-        print(f"🚀 NEW VERSION AVAILABLE: {latest_version}")
-        print("="*50)
-        print(f"\nPATCH NOTES:\n{whats_new}")
-        print("-" * 50)
+        cprint("\n" + "="*50, 'cyan')
+        cprint(f"🚀 NEW VERSION AVAILABLE: {latest_version}", 'magenta')
+        cprint("="*50, 'cyan')
+        cprint(f"\nPATCH NOTES:\n{whats_new}", 'white')
+        cprint("-" * 50, 'cyan')
         choice = input("\nWould you like to update now? (y/n): ").strip().lower()
         if choice == 'y':
             if getattr(sys, 'frozen', False):
                 run_update(update)
                 return
             else:
-                print("!!! Skipping update: Running from source code. !!!")
-                print("Continuing to app...\n")
+                cprint("!!! Skipping update: Running from source code. !!!", 'yellow')
+                cprint("Continuing to app...\n", 'cyan')
     global token, window
     token = None
     if DetectEdge():
         gui = "edgechromium"
     else:
-        print("Unable to find Microsoft Edge Webview2, using QT")
+        cprint("Unable to find Microsoft Edge Webview2, using QT", 'yellow')
         gui = "qt"
     def on_closed():
         if token is None:
@@ -403,6 +444,6 @@ def GetToken():
         token = input("  Window closed — paste token manually: ").strip()
     r = validate_token(token)
     if not r:
-        print("Unable to validate token.")
+        cprint("[UNKNOWN] Unable to validate token.", 'red')
         return None
     return token
