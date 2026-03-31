@@ -1,6 +1,10 @@
-# Get-Token
+# Get-Discord-Token
 
 A specialized utility to scan and retrieve Discord authentication tokens from local system directories.
+
+## 🌐 Community
+
+Join our Discord server for support, updates, and discussions: [Discord Server](https://discord.gg/GJ5UFBcSU)
 
 > [!IMPORTANT]
 > **Windows Systems Only!** Optimized specifically for Windows 10 and Windows 11. Older Windows versions may work but are not officially supported.
@@ -9,11 +13,24 @@ A specialized utility to scan and retrieve Discord authentication tokens from lo
 
 ## 📂 Scanning Scope
 
-### 🌐 Web Browsers
+### 🌐 Chromium-Based Browsers
 The tool extracts data from the following Chromium-based browsers:
+* **Chromium**
 * **Google Chrome**
+* **Chrome Canary**
 * **Microsoft Edge**
+* **Edge Beta**
+* **Edge Dev**
 * **Brave Browser**
+* **Opera Browser**
+* **Vivaldi**
+* **Ulaa Browser**
+* **Opera GX**
+
+### 🦊 Gecko-Based Browsers
+The tool extracts data from the following Gecko-based browsers:
+* **Firefox**
+* **Firefox MSIX (Firefox from the Microsoft Store)**
 
 ### 💻 Desktop Apps
 The tool targets all official Discord client distributions:
